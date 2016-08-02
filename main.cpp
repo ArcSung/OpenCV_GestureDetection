@@ -6,6 +6,9 @@
 #include <X11/Xutil.h>
 using namespace std;
 using namespace cv;
+
+bool UseCamera = false;
+
 //This function returns the square of the euclidean distance between 2 points.
 double dist(Point x,Point y)
 {
@@ -139,7 +142,8 @@ Mat ContourFind(Mat bin_img)
     vector< vector< Point> > contours_poly(contours.size());
     for( int i = 0; i< contours.size(); i++ ) // iterate through each contour.
     {
-        approxPolyDP( Mat(contours[i]), contours_poly[i], 3, true ); // let contours more smooth
+        if(contourArea(contours[i])>=5000)
+          approxPolyDP( Mat(contours[i]), contours_poly[i], 3, true ); // let contours more smooth
     }
     drawContours(drawing, contours_poly, -1, Scalar(255.0), CV_FILLED);
     return drawing;
@@ -221,7 +225,7 @@ void GestureDetection(Mat &fore, Mat &frame)
                 //Find avg palm centers for the last few frames to stabilize its centers, also find the avg radius
                 palm_centers.push_back(soln_circle);
                 if(palm_centers.size()>10)
-                palm_centers.erase(palm_centers.begin());
+                    palm_centers.erase(palm_centers.begin());
                             
                 Point palm_center;
                 double radius=0;
@@ -257,7 +261,10 @@ void GestureDetection(Mat &fore, Mat &frame)
                         if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
                         {
                             if((Xdist>=0.1*radius&&Xdist<=1.3*radius&&Xdist<Ydist)||(Ydist>=0.1*radius&&Ydist<=1.3*radius&&Xdist>Ydist))
-                                line( frame, ptEnd, ptFar, Scalar(0,255,0), 1 ),no_of_fingers++;
+                            {    
+                                line( frame, ptEnd, ptFar, Scalar(0,255,0), 1 );
+                                no_of_fingers++;
+                            }    
                         }
                 }
 						
@@ -268,7 +275,6 @@ void GestureDetection(Mat &fore, Mat &frame)
                 //	mouseClick();
                 //else
                 //	mouseRelease();
-						
             }
 		}
 
@@ -284,18 +290,22 @@ int main(int argc, char *argv[])
 	Mat fore;
     Mat hsv;
     Mat mask;
+    Mat fmask;
+    Mat image;
 	VideoCapture cap(0);
     cv::Ptr<cv::BackgroundSubtractor> bg;
 	bg = cv::createBackgroundSubtractorMOG2();
-	//bg->set("nmixtures",3);
-	//bg->set("detectShadows",false);
 
+    image = imread(argv[1]);
+    if(image.empty())
+        UseCamera = true;
 
-	namedWindow("Frame");
+	//namedWindow("Frame")
 	//namedWindow("Background");
 	int backgroundFrame=500;
 
 
+    if(UseCamera)
 	for(;;)
 	{
 		//Get the frame
@@ -308,18 +318,18 @@ int main(int argc, char *argv[])
 
 		//Update the current background model and get the foreground
 		/*if(backgroundFrame>0)
-		{bg->apply(frame,fore);backgroundFrame--;}
+		{bg->apply(frame,fmask);backgroundFrame--;}
 		else
-		{bg->apply(frame,fore,0);}
+		{bg->apply(frame,fmask,0);}
 
 		//Get background image to display it
 		bg->getBackgroundImage(back);
 
         
-        threshold(fore, fore, 0, 255, THRESH_BINARY + THRESH_OTSU);
+        threshold(fmask, fmask, 0, 255, THRESH_BINARY + THRESH_OTSU);
 		//Enhance edges in the foreground by applying erosion and dilation
-		erode(fore,fore,Mat());
-		dilate(fore,fore,Mat());*/
+		erode(fmask,fmask,Mat());
+		dilate(fmask,fmask,Mat());*/
 
         /*use skin color */
         cvtColor(frame, hsv, COLOR_BGR2HSV);
@@ -334,9 +344,10 @@ int main(int argc, char *argv[])
 
         // Apply the specified morphology operation
         Mat element = getStructuringElement( morph_elem, Size( 2*morph_size + 1, 2*morph_size+1 ), Point( morph_size, morph_size ) );
+        fore = ContourFind(mask);
         morphologyEx( mask, mask, operation, element );
 
-        fore = ContourFind(mask);
+        //mask = fmask & mask;
         imshow("fore", fore);
         GestureDetection(fore, frame);
 		if(backgroundFrame>0)
@@ -345,5 +356,41 @@ int main(int argc, char *argv[])
 		//imshow("Background",back);
 		if(waitKey(10) >= 0) break;
 	}
+    else
+    {
+		//Update the current background model and get the foreground
+		/*if(backgroundFrame>0)
+		{bg->apply(frame,fmask);backgroundFrame--;}
+		else
+		{bg->apply(frame,fmask,0);}
+
+		//Get background image to display it
+		bg->getBackgroundImage(back);
+        threshold(fmask, fmask, 0, 255, THRESH_BINARY + THRESH_OTSU);
+		//Enhance edges in the foreground by applying erosion and dilation
+		erode(fmask,fmask,Mat());
+		dilate(fmask,fmask,Mat());*/
+
+        /*use skin color */
+        cvtColor(image, hsv, COLOR_BGR2HSV);
+        inRange(hsv, Scalar(0, 58, 10),
+                Scalar(35, 174, 256), mask);
+        
+        // Another option is to use dilate/erode/dilate:
+	    int morph_operator = 1; // 0: opening, 1: closing, 2: gradient, 3: top hat, 4: black hat
+	    int morph_elem = 2; // 0: rect, 1: cross, 2: ellipse
+	    int morph_size = 5; // 2*n + 1
+        int operation = morph_operator + 2;
+
+        // Apply the specified morphology operation
+        Mat element = getStructuringElement( morph_elem, Size( 2*morph_size + 1, 2*morph_size+1 ), Point( morph_size, morph_size ) );
+        fore = ContourFind(mask);
+        morphologyEx( mask, mask, operation, element );
+
+        //mask = fmask & mask;
+        GestureDetection(fore, image);
+        imshow("image", image);
+        waitKey(0);
+    }    
 	return 0;
 }
